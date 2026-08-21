@@ -1,5 +1,4 @@
 import { getApp, getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getFirestore, type Firestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -13,7 +12,10 @@ const firebaseConfig = {
 
 /**
  * Firebase is optional at build time so the site runs (and deploys) before the
- * project credentials exist. Callers must handle a null Firestore instance.
+ * project credentials exist.
+ *
+ * Do not import firebase/firestore from this module. Firestore pulls in
+ * protobufjs (`new Function`), which Cloudflare Workers reject.
  */
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId,
@@ -22,9 +24,4 @@ export const isFirebaseConfigured = Boolean(
 export function getFirebaseApp(): FirebaseApp | null {
   if (!isFirebaseConfigured) return null;
   return getApps().length ? getApp() : initializeApp(firebaseConfig);
-}
-
-export function getDb(): Firestore | null {
-  const app = getFirebaseApp();
-  return app ? getFirestore(app) : null;
 }

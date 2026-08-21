@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDb, isFirebaseConfigured } from "@/lib/firebase";
+import { getFirebaseApp, isFirebaseConfigured } from "@/lib/firebase";
 import { saveInquiry } from "@/lib/site-store";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -36,10 +36,10 @@ export async function POST(request: Request) {
 
   if (isFirebaseConfigured) {
     try {
-      const db = getDb();
-      if (db) {
-        const { addDoc, collection } = await import("firebase/firestore");
-        await addDoc(collection(db, "inquiries"), {
+      const app = getFirebaseApp();
+      if (app) {
+        const { addDoc, collection, getFirestore } = await import("firebase/firestore");
+        await addDoc(collection(getFirestore(app), "inquiries"), {
           name,
           company,
           email,

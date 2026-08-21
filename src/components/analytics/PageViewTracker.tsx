@@ -1,28 +1,7 @@
 "use client";
 
-import { getAnalytics, isSupported, logEvent, type Analytics } from "firebase/analytics";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { getFirebaseApp, isFirebaseConfigured } from "@/lib/firebase";
-
-let analytics: Analytics | null = null;
-let analyticsPromise: Promise<Analytics | null> | null = null;
-
-function loadAnalytics() {
-  if (!isFirebaseConfigured) return Promise.resolve(null);
-  if (analytics) return Promise.resolve(analytics);
-  if (!analyticsPromise) {
-    analyticsPromise = isSupported()
-      .then((supported) => {
-        const app = getFirebaseApp();
-        if (!supported || !app) return null;
-        analytics = getAnalytics(app);
-        return analytics;
-      })
-      .catch(() => null);
-  }
-  return analyticsPromise;
-}
 
 export function PageViewTracker() {
   const pathname = usePathname();
@@ -45,14 +24,20 @@ export function PageViewTracker() {
       keepalive: true,
     }).catch(() => undefined);
 
-    void loadAnalytics().then((instance) => {
-      if (!instance) return;
-      logEvent(instance, "page_view", {
-        page_path: pathname,
-        page_location: window.location.href,
-        page_title: document.title,
-      });
-    });
+    void import("@/lib/firebase")
+      .then(async ({ getFirebaseApp, isFirebaseConfigured }) => {
+        if (!isFirebaseConfigured) return;
+        const { getAnalytics, isSupported, logEvent } = await import("firebase/analytics");
+        const supported = await isSupported();
+        const app = getFirebaseApp();
+        if (!supported || !app) return;
+        logEvent(getAnalytics(app), "page_view", {
+          page_path: pathname,
+          page_location: window.location.href,
+          page_title: document.title,
+        });
+      })
+      .catch(() => undefined);
 
     return () => controller.abort();
   }, [pathname]);
