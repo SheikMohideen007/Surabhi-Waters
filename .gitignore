@@ -44,6 +44,11 @@ next-env.d.ts
 # local enquiry + analytics store
 .data/
 
+# Cloudflare / OpenNext
+.open-next
+.wrangler
+.dev.vars
+
 
 .firebase/
 firebase-debug.log
