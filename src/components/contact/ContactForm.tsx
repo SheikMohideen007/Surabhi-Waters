@@ -115,7 +115,7 @@ export function ContactForm() {
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (honeypot.current || Date.now() - mountedAt.current < 2500) {
+    if (honeypot.current || Date.now() - mountedAt.current < 600) {
       setStatus("error");
       return;
     }

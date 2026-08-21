@@ -21,6 +21,13 @@ export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId,
 );
 
+export function getFirebaseRestConfig() {
+  return {
+    apiKey: firebaseConfig.apiKey ?? "",
+    projectId: firebaseConfig.projectId ?? "",
+  };
+}
+
 export function getFirebaseApp(): FirebaseApp | null {
   if (!isFirebaseConfigured) return null;
   return getApps().length ? getApp() : initializeApp(firebaseConfig);

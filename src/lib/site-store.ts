@@ -1,6 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { isFirebaseConfigured } from "@/lib/firebase";
+import {
+  createInquiryDocument,
+  listInquiryDocuments,
+  updateInquiryStatus,
+} from "@/lib/firestore-rest";
 
 export type Inquiry = {
   id: string;
@@ -56,26 +62,39 @@ async function readStore(): Promise<StoreFile> {
 }
 
 async function writeStore(store: StoreFile) {
-  await mkdir(path.dirname(FILE), { recursive: true });
-  await writeFile(FILE, JSON.stringify(store, null, 2), "utf8");
+  try {
+    await mkdir(path.dirname(FILE), { recursive: true });
+    await writeFile(FILE, JSON.stringify(store, null, 2), "utf8");
+  } catch (error) {
+    console.error("Local site-store write skipped", error);
+  }
+}
+
+function buildInquiry(
+  input: Omit<Inquiry, "id" | "createdAt" | "status" | "source"> & { source?: string },
+): Inquiry {
+  return {
+    id: randomUUID(),
+    name: input.name.trim(),
+    company: input.company.trim(),
+    email: input.email.trim(),
+    phone: input.phone.trim(),
+    location: input.location.trim(),
+    requirement: input.requirement.trim(),
+    message: input.message.trim(),
+    source: input.source ?? "website-contact-form",
+    createdAt: new Date().toISOString(),
+    status: "new",
+  };
 }
 
 export function saveInquiry(input: Omit<Inquiry, "id" | "createdAt" | "status" | "source"> & { source?: string }) {
   return enqueue(async () => {
+    const inquiry = buildInquiry(input);
+    if (isFirebaseConfigured) {
+      return createInquiryDocument(inquiry);
+    }
     const store = await readStore();
-    const inquiry: Inquiry = {
-      id: randomUUID(),
-      name: input.name.trim(),
-      company: input.company.trim(),
-      email: input.email.trim(),
-      phone: input.phone.trim(),
-      location: input.location.trim(),
-      requirement: input.requirement.trim(),
-      message: input.message.trim(),
-      source: input.source ?? "website-contact-form",
-      createdAt: new Date().toISOString(),
-      status: "new",
-    };
     store.inquiries.unshift(inquiry);
     await writeStore(store);
     return inquiry;
@@ -84,6 +103,9 @@ export function saveInquiry(input: Omit<Inquiry, "id" | "createdAt" | "status" |
 
 export function listInquiries() {
   return enqueue(async () => {
+    if (isFirebaseConfigured) {
+      return listInquiryDocuments();
+    }
     const store = await readStore();
     return store.inquiries;
   });
@@ -91,6 +113,9 @@ export function listInquiries() {
 
 export function markInquiryRead(id: string) {
   return enqueue(async () => {
+    if (isFirebaseConfigured) {
+      return updateInquiryStatus(id, "read");
+    }
     const store = await readStore();
     const inquiry = store.inquiries.find((item) => item.id === id);
     if (inquiry) inquiry.status = "read";
@@ -138,7 +163,9 @@ function startOfDay(date: Date) {
 
 export function getDashboardStats(): Promise<DashboardStats> {
   return enqueue(async () => {
-    const store = await readStore();
+    const store = isFirebaseConfigured
+      ? { inquiries: await listInquiryDocuments(), pageViews: (await readStore()).pageViews }
+      : await readStore();
     const now = Date.now();
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
     const today = startOfDay(new Date());

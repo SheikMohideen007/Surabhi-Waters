@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getFirebaseApp, isFirebaseConfigured } from "@/lib/firebase";
 import { saveInquiry } from "@/lib/site-store";
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -23,38 +22,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Please complete the required fields." }, { status: 400 });
   }
 
-  const inquiry = await saveInquiry({
-    name,
-    company,
-    email,
-    phone,
-    location,
-    requirement,
-    message,
-    source: "website-contact-form",
-  });
-
-  if (isFirebaseConfigured) {
-    try {
-      const app = getFirebaseApp();
-      if (app) {
-        const { addDoc, collection, getFirestore } = await import("firebase/firestore");
-        await addDoc(collection(getFirestore(app), "inquiries"), {
-          name,
-          company,
-          email,
-          phone,
-          location,
-          requirement,
-          message,
-          source: "website-contact-form",
-          createdAt: inquiry.createdAt,
-        });
-      }
-    } catch (error) {
-      console.error("Firestore enquiry write failed", error);
-    }
+  try {
+    const inquiry = await saveInquiry({
+      name,
+      company,
+      email,
+      phone,
+      location,
+      requirement,
+      message,
+      source: "website-contact-form",
+    });
+    return NextResponse.json({ ok: true, id: inquiry.id });
+  } catch (error) {
+    console.error("Enquiry submit failed", error);
+    return NextResponse.json({ error: "Could not save enquiry." }, { status: 500 });
   }
-
-  return NextResponse.json({ ok: true, id: inquiry.id });
 }
