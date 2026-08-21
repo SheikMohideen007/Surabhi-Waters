@@ -54,7 +54,7 @@ async function identityRequest(path: string, body: Record<string, string | boole
   if (!response.ok || !data.idToken) {
     throw new Error(data.error?.message ?? `Auth request failed (${response.status})`);
   }
-  return data;
+  return { idToken: data.idToken, expiresIn: data.expiresIn };
 }
 
 async function getAdminIdToken() {
