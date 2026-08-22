@@ -1,5 +1,5 @@
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { adminCredentials } from "@/lib/admin-auth";
-import { getFirebaseRestConfig, isFirebaseConfigured } from "@/lib/firebase";
 import type { Inquiry, PageView } from "@/lib/site-store";
 
 type FirestoreValue = { stringValue?: string };
@@ -10,8 +10,33 @@ type FirestoreDocument = {
 
 let cachedToken: { value: string; expiresAt: number } | null = null;
 
-function collectionUrl(collection: string) {
-  const { projectId } = getFirebaseRestConfig();
+async function workerEnv(name: string) {
+  const fromProcess = process.env[name]?.trim();
+  if (fromProcess) return fromProcess;
+  try {
+    const { env } = await getCloudflareContext({ async: true });
+    const value = (env as Record<string, unknown>)[name];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  } catch {
+    // next dev is not inside a Worker
+  }
+  return "";
+}
+
+export async function getFirebaseRestConfig() {
+  const apiKey = (await workerEnv("FIREBASE_API_KEY")) || (await workerEnv("NEXT_PUBLIC_FIREBASE_API_KEY"));
+  const projectId = (await workerEnv("FIREBASE_PROJECT_ID")) || (await workerEnv("NEXT_PUBLIC_FIREBASE_PROJECT_ID"));
+  return { apiKey, projectId };
+}
+
+export async function isFirebaseRestConfigured() {
+  const { apiKey, projectId } = await getFirebaseRestConfig();
+  return Boolean(apiKey && projectId);
+}
+
+async function collectionUrl(collection: string) {
+  const { projectId } = await getFirebaseRestConfig();
+  if (!projectId) throw new Error("FIREBASE_PROJECT_ID is not set");
   return `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collection}`;
 }
 
@@ -60,7 +85,8 @@ function documentToPageView(doc: FirestoreDocument): PageView | null {
 }
 
 async function identityRequest(path: string, body: Record<string, string | boolean>) {
-  const { apiKey } = getFirebaseRestConfig();
+  const { apiKey } = await getFirebaseRestConfig();
+  if (!apiKey) throw new Error("FIREBASE_API_KEY is not set");
   const response = await fetch(`https://identitytoolkit.googleapis.com/v1/${path}?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -74,7 +100,7 @@ async function identityRequest(path: string, body: Record<string, string | boole
 }
 
 async function getAdminIdToken() {
-  if (!isFirebaseConfigured) return null;
+  if (!(await isFirebaseRestConfigured())) return null;
   if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) return cachedToken.value;
 
   const email = adminCredentials.email.trim();
@@ -138,8 +164,9 @@ async function firestoreGet(url: string) {
 }
 
 async function firestoreCreate(collection: string, fields: Record<string, FirestoreValue>) {
-  const { apiKey } = getFirebaseRestConfig();
-  const response = await fetch(`${collectionUrl(collection)}?key=${encodeURIComponent(apiKey)}`, {
+  const { apiKey } = await getFirebaseRestConfig();
+  if (!apiKey) throw new Error("FIREBASE_API_KEY is not set");
+  const response = await fetch(`${await collectionUrl(collection)}?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ fields }),
@@ -168,7 +195,7 @@ export async function createInquiryDocument(inquiry: Inquiry) {
 
 export async function listInquiryDocuments(): Promise<Inquiry[]> {
   try {
-    const documents = await firestoreGet(`${collectionUrl("inquiries")}?pageSize=200`);
+    const documents = await firestoreGet(`${await collectionUrl("inquiries")}?pageSize=200`);
     return documents
       .map(documentToInquiry)
       .filter((item): item is Inquiry => Boolean(item))
@@ -182,7 +209,7 @@ export async function listInquiryDocuments(): Promise<Inquiry[]> {
 export async function updateInquiryStatus(id: string, status: Inquiry["status"]) {
   const token = await getAdminIdToken();
   if (!token) return null;
-  const response = await fetch(`${collectionUrl("inquiries")}/${encodeURIComponent(id)}?updateMask.fieldPaths=status`, {
+  const response = await fetch(`${await collectionUrl("inquiries")}/${encodeURIComponent(id)}?updateMask.fieldPaths=status`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -208,7 +235,7 @@ export async function createPageViewDocument(view: PageView) {
 
 export async function listPageViewDocuments(): Promise<PageView[]> {
   try {
-    const documents = await firestoreGet(`${collectionUrl("pageViews")}?pageSize=1000`);
+    const documents = await firestoreGet(`${await collectionUrl("pageViews")}?pageSize=1000`);
     return documents
       .map(documentToPageView)
       .filter((item): item is PageView => Boolean(item))

@@ -1,10 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { isFirebaseConfigured } from "@/lib/firebase";
 import {
   createInquiryDocument,
   createPageViewDocument,
+  isFirebaseRestConfigured,
   listInquiryDocuments,
   listPageViewDocuments,
   updateInquiryStatus,
@@ -63,13 +63,13 @@ async function readStore(): Promise<StoreFile> {
   }
 }
 
+function canUseLocalFileStore() {
+  return process.env.NODE_ENV !== "production";
+}
+
 async function writeStore(store: StoreFile) {
-  try {
-    await mkdir(path.dirname(FILE), { recursive: true });
-    await writeFile(FILE, JSON.stringify(store, null, 2), "utf8");
-  } catch (error) {
-    console.error("Local site-store write skipped", error);
-  }
+  await mkdir(path.dirname(FILE), { recursive: true });
+  await writeFile(FILE, JSON.stringify(store, null, 2), "utf8");
 }
 
 function buildInquiry(
@@ -93,8 +93,11 @@ function buildInquiry(
 export function saveInquiry(input: Omit<Inquiry, "id" | "createdAt" | "status" | "source"> & { source?: string }) {
   return enqueue(async () => {
     const inquiry = buildInquiry(input);
-    if (isFirebaseConfigured) {
+    if (await isFirebaseRestConfigured()) {
       return createInquiryDocument(inquiry);
+    }
+    if (!canUseLocalFileStore()) {
+      throw new Error("Firestore is not configured on this server");
     }
     const store = await readStore();
     store.inquiries.unshift(inquiry);
@@ -105,9 +108,10 @@ export function saveInquiry(input: Omit<Inquiry, "id" | "createdAt" | "status" |
 
 export function listInquiries() {
   return enqueue(async () => {
-    if (isFirebaseConfigured) {
+    if (await isFirebaseRestConfigured()) {
       return listInquiryDocuments();
     }
+    if (!canUseLocalFileStore()) return [];
     const store = await readStore();
     return store.inquiries;
   });
@@ -115,9 +119,10 @@ export function listInquiries() {
 
 export function markInquiryRead(id: string) {
   return enqueue(async () => {
-    if (isFirebaseConfigured) {
+    if (await isFirebaseRestConfigured()) {
       return updateInquiryStatus(id, "read");
     }
+    if (!canUseLocalFileStore()) return null;
     const store = await readStore();
     const inquiry = store.inquiries.find((item) => item.id === id);
     if (inquiry) inquiry.status = "read";
@@ -136,9 +141,10 @@ export function savePageView(pathName: string, referrer: string) {
       referrer,
       createdAt: new Date().toISOString(),
     };
-    if (isFirebaseConfigured) {
+    if (await isFirebaseRestConfigured()) {
       return createPageViewDocument(view);
     }
+    if (!canUseLocalFileStore()) return view;
     const store = await readStore();
     store.pageViews.unshift(view);
     if (store.pageViews.length > MAX_PAGE_VIEWS) {
@@ -168,12 +174,14 @@ function startOfDay(date: Date) {
 
 export function getDashboardStats(): Promise<DashboardStats> {
   return enqueue(async () => {
-    const store = isFirebaseConfigured
+    const store = (await isFirebaseRestConfigured())
       ? {
           inquiries: await listInquiryDocuments(),
           pageViews: await listPageViewDocuments(),
         }
-      : await readStore();
+      : canUseLocalFileStore()
+        ? await readStore()
+        : { inquiries: [], pageViews: [] };
     const now = Date.now();
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
     const today = startOfDay(new Date());

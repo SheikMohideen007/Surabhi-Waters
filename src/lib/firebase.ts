@@ -11,8 +11,9 @@ const firebaseConfig = {
 };
 
 /**
- * Firebase is optional at build time so the site runs (and deploys) before the
- * project credentials exist.
+ * Browser Analytics only. Server Firestore access must use getFirebaseRestConfig()
+ * so Cloudflare runtime env is read (NEXT_PUBLIC_* is inlined empty at build
+ * if it was missing during `next build`).
  *
  * Do not import firebase/firestore from this module. Firestore pulls in
  * protobufjs (`new Function`), which Cloudflare Workers reject.
@@ -20,13 +21,6 @@ const firebaseConfig = {
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.appId,
 );
-
-export function getFirebaseRestConfig() {
-  return {
-    apiKey: firebaseConfig.apiKey ?? "",
-    projectId: firebaseConfig.projectId ?? "",
-  };
-}
 
 export function getFirebaseApp(): FirebaseApp | null {
   if (!isFirebaseConfigured) return null;
