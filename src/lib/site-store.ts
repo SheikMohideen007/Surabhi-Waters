@@ -4,7 +4,9 @@ import { randomUUID } from "node:crypto";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import {
   createInquiryDocument,
+  createPageViewDocument,
   listInquiryDocuments,
+  listPageViewDocuments,
   updateInquiryStatus,
 } from "@/lib/firestore-rest";
 
@@ -128,13 +130,16 @@ export function savePageView(pathName: string, referrer: string) {
   if (pathName.startsWith("/admin") || pathName.startsWith("/api")) return Promise.resolve(null);
 
   return enqueue(async () => {
-    const store = await readStore();
     const view: PageView = {
       id: randomUUID(),
       path: pathName,
       referrer,
       createdAt: new Date().toISOString(),
     };
+    if (isFirebaseConfigured) {
+      return createPageViewDocument(view);
+    }
+    const store = await readStore();
     store.pageViews.unshift(view);
     if (store.pageViews.length > MAX_PAGE_VIEWS) {
       store.pageViews.length = MAX_PAGE_VIEWS;
@@ -164,7 +169,10 @@ function startOfDay(date: Date) {
 export function getDashboardStats(): Promise<DashboardStats> {
   return enqueue(async () => {
     const store = isFirebaseConfigured
-      ? { inquiries: await listInquiryDocuments(), pageViews: (await readStore()).pageViews }
+      ? {
+          inquiries: await listInquiryDocuments(),
+          pageViews: await listPageViewDocuments(),
+        }
       : await readStore();
     const now = Date.now();
     const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
